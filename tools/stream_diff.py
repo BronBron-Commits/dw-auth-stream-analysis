@@ -4,12 +4,11 @@ import struct
 import re
 
 # ------------------------------------------------------------
-# Mask ranges
-# message_index -> list of (start, end) ranges [inclusive]
+# Existing mask ranges (manually confirmed)
 # ------------------------------------------------------------
 MASK_RANGES = {
-    0: [(0, 7)],      # H01
-    2: [(0, 31)],     # Client msg 2 variable header (expanded)
+    0: [(0, 7)],     # H01
+    2: [(0, 31)],    # Client msg 2 (partial header)
 }
 
 RESYNC_WINDOW = 6
@@ -78,21 +77,27 @@ def apply_mask(payload, msg_index):
                 masked[i] = 0x00
     return masked
 
-def first_diff_offset(a, b):
-    minlen = min(len(a), len(b))
-    for i in range(minlen):
+def diff_ranges(a, b):
+    ranges = []
+    i = 0
+    n = min(len(a), len(b))
+    while i < n:
         if a[i] != b[i]:
-            return i
+            start = i
+            while i < n and a[i] != b[i]:
+                i += 1
+            ranges.append((start, i - 1))
+        else:
+            i += 1
     if len(a) != len(b):
-        return minlen
-    return None
+        ranges.append((n, max(len(a), len(b)) - 1))
+    return ranges
 
 def hexdump_slice(b, start, count=16):
     end = min(start + count, len(b))
     return " ".join(f"{x:02x}" for x in b[start:end])
 
 def try_resync(msgs_a, msgs_b, ia, ib):
-    # Try to find a forward alignment based on equal length
     for da in range(1, RESYNC_WINDOW + 1):
         for db in range(1, RESYNC_WINDOW + 1):
             na = ia + da
@@ -100,8 +105,6 @@ def try_resync(msgs_a, msgs_b, ia, ib):
             if na < len(msgs_a) and nb < len(msgs_b):
                 if len(msgs_a[na]) == len(msgs_b[nb]):
                     return na, nb
-
-    # Fallback: force progress (never stay on same pair)
     return ia + 1, ib + 1
 
 def main():
@@ -116,16 +119,10 @@ def main():
     print(f"Stream B messages: {len(msgs_b)}")
 
     ia = ib = 0
-    diffs = oks = 0
-    seen = set()
+    oks = diffs = 0
+    suggested = {}
 
     while ia < len(msgs_a) and ib < len(msgs_b):
-        if (ia, ib) in seen:
-            ia += 1
-            ib += 1
-            continue
-        seen.add((ia, ib))
-
         pa = msgs_a[ia]
         pb = msgs_b[ib]
 
@@ -139,13 +136,15 @@ def main():
             ib += 1
             continue
 
-        off = first_diff_offset(ma, mb)
         print(f"[DIFF] A[{ia}] vs B[{ib}]")
         print(f"  A len={len(pa)} B len={len(pb)}")
-        if off is not None:
-            print(f"  first differing byte @ offset {off}")
-            print(f"  A: {hexdump_slice(pa, off)}")
-            print(f"  B: {hexdump_slice(pb, off)}")
+
+        ranges = diff_ranges(ma, mb)
+        for start, end in ranges:
+            print(f"  diff range {start}-{end}")
+            print(f"    A: {hexdump_slice(pa, start)}")
+            print(f"    B: {hexdump_slice(pb, start)}")
+            suggested.setdefault(ia, []).append((start, end))
 
         diffs += 1
         ia, ib = try_resync(msgs_a, msgs_b, ia, ib)
@@ -153,8 +152,12 @@ def main():
     print("--------------------------------------------------")
     print(f"OK: {oks}")
     print(f"DIFF: {diffs}")
-    print(f"Remaining A: {len(msgs_a) - ia}")
-    print(f"Remaining B: {len(msgs_b) - ib}")
+    print("--------------------------------------------------")
+    print("SUGGESTED MASK_RANGES (copy/paste):")
+    print("{")
+    for msg, ranges in sorted(suggested.items()):
+        print(f"  {msg}: {ranges},")
+    print("}")
 
 if __name__ == "__main__":
     main()
