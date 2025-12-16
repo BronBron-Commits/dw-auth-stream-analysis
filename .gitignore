@@ -1,0 +1,20 @@
+# Build artifacts
+*.exe
+*.obj
+*.pdb
+*.ilk
+
+# Visual Studio
+.vs/
+*.sln
+
+# Wireshark captures
+*.pcap
+*.pcapng
+
+# Raw streams / dumps
+stream_*.txt
+stream_*.raw
+
+# Logs
+*.log
