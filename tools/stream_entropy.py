@@ -58,23 +58,34 @@ def classify(ent):
         return "ENCRYPTED / RANDOM"
 
 def main():
-    if len(sys.argv) != 2:
-        print("usage: stream_entropy.py <stream>")
+    if len(sys.argv) < 2:
+        print("usage: stream_entropy.py <stream1> [stream2 ...]")
         sys.exit(1)
 
-    data = read_stream(sys.argv[1])
-    msgs = parse_messages(data)
+    streams = []
+    for path in sys.argv[1:]:
+        data = read_stream(path)
+        msgs = parse_messages(data)
+        streams.append((path, msgs))
 
-    print(f"Messages: {len(msgs)}")
-    print("-" * 60)
+    max_msgs = max(len(m) for _, m in streams)
 
-    for i, m in enumerate(msgs):
-        e = entropy(m)
-        print(
-            f"msg[{i:02d}] len={len(m):4d} "
-            f"entropy={e:5.2f} "
-            f"{classify(e)}"
-        )
+    print("Entropy by message index")
+    print("-" * 80)
+
+    for i in range(max_msgs):
+        print(f"msg[{i:02d}]")
+        for path, msgs in streams:
+            if i >= len(msgs):
+                print(f"  {path:<15} <missing>")
+                continue
+
+            e = entropy(msgs[i])
+            print(
+                f"  {path:<15} len={len(msgs[i]):4d} "
+                f"entropy={e:5.2f} {classify(e)}"
+            )
+        print()
 
 if __name__ == "__main__":
     main()
